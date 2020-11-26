@@ -73,5 +73,5 @@ async def main(urls):
 
 
 if __name__ == '__main__':
-    urls = list(open('urls.txt'))
+    urls = list(open('urls/urls.txt'))
     asyncio.run(main(urls), debug=True)
