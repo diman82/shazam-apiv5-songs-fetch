@@ -2,17 +2,9 @@ import asyncio
 
 from aiohttp import ClientConnectorError
 from aiohttp.client import ClientSession
-import codecs, logging, logging.config, os, yaml, json
+import codecs, logging.config, os, yaml, json
 import re
 
-ROOT_PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
-with open(os.path.join(ROOT_PROJECT_DIR, 'logging_config.yaml'), 'r') as f:
-    log_cfg = yaml.safe_load(f.read())
-logging.config.dictConfig(log_cfg)
-logger = logging.getLogger('dev')
-logger.setLevel(logging.DEBUG)
-
-SEMAPHORE = int(os.getenv("SEMAPHORE")) if os.getenv("SEMAPHORE") is not None else 25
 
 async def main(urls):
     Utf8Decoder = codecs.getincrementaldecoder('utf-8')
@@ -25,8 +17,10 @@ async def main(urls):
                 async with ClientSession() as session:
                     try:
                         resp = await session.get(url=song['youtube_uri'][0])
-                    except ClientConnectorError:
+                    except ClientConnectorError as err:
                         logger.exception('semaphore timeout for request for url: %s , response status is: %s', song['youtube_uri'][0], resp.status)
+                    except RuntimeError as err:
+                        logger.exception('RuntimeError exception for song: %s , exception is: %s', song['youtube_uri'][0], err)
                     corrected_song = song
 
                     stream = resp.content
@@ -46,11 +40,15 @@ async def main(urls):
         async with sem:
             async with ClientSession() as session:
                 try:
-                    resp = await session.get(url=url)
-                except ClientConnectorError:
+                    resp = await session.get(url=url, raise_for_status=True)
+                    logger.info('Successfully processed url: %s', url)
+                except ClientConnectorError as err:
                     logger.exception('semaphore timeout for request for url: %s , response status is: %s', url, resp.status)
-                if not resp.status == 200:
-                    logger.exception('bad response, response status code is: %s', resp.status)
+                except Exception as err:
+                    logger.exception('Logged exception for url: %s , exception is: %s', url, err)
+                # if not resp.status == 200:
+                #     logger.exception('bad response, response status code is: %s', resp.status)
+                #     raise ClientConnectorError
                 stream = resp.content
                 data = await stream.read()
                 decoded_data = decoder.decode(data)
@@ -84,6 +82,18 @@ async def main(urls):
     print('All finished')
 
 
+class infoFilter(logging.Filter):
+    def filter(self, rec):
+        return rec.levelno == logging.INFO
+
+def setupLogging():
+    with open('logging_config.yaml', 'r') as f:
+        log_cfg = yaml.safe_load(f.read())
+    logging.config.dictConfig(log_cfg)
+
 if __name__ == '__main__':
-    urls = list(open('./mnt/urls.txt'))
+    setupLogging()
+    logger = logging.getLogger('dev')
+    SEMAPHORE = int(os.getenv("SEMAPHORE_ENV")) if os.getenv("SEMAPHORE_ENV") is not None else 25
+    urls = list(open('mnt/urls.txt'))
     asyncio.run(main(urls), debug=False)
