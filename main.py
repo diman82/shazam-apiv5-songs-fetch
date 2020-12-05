@@ -1,4 +1,6 @@
 import asyncio
+
+from aiohttp import ClientConnectorError
 from aiohttp.client import ClientSession
 import codecs, logging, logging.config, os, yaml, json
 import re
@@ -8,8 +10,9 @@ with open(os.path.join(ROOT_PROJECT_DIR, 'logging_config.yaml'), 'r') as f:
     log_cfg = yaml.safe_load(f.read())
 logging.config.dictConfig(log_cfg)
 logger = logging.getLogger('dev')
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
+SEMAPHORE = int(os.getenv("SEMAPHORE")) if os.getenv("SEMAPHORE") is not None else 25
 
 async def main(urls):
     Utf8Decoder = codecs.getincrementaldecoder('utf-8')
@@ -17,31 +20,41 @@ async def main(urls):
 
     async def resolve_redirect_url(song):
         if 'youtube_uri' in song.keys():
-            async with ClientSession() as session:
-                r = await session.get(url=song['youtube_uri'][0])
-                corrected_song = song
+            sem = asyncio.Semaphore(SEMAPHORE)
+            async with sem:
+                async with ClientSession() as session:
+                    try:
+                        resp = await session.get(url=song['youtube_uri'][0])
+                    except ClientConnectorError:
+                        logger.exception('semaphore timeout for request for url: %s , response status is: %s', song['youtube_uri'][0], resp.status)
+                    corrected_song = song
 
-                stream = r.content
-                data = await stream.read()
-                html = decoder.decode(data)
-                m = re.search(r'contents":\[{"videoRenderer":{"videoId":"([a-zA-Z0-9_]{11})",', html)
-                if m is not None:
-                    corrected_song['youtube_uri'] = "https://www.youtube.com/watch?v=" + m.group(1)
-                else:
-                    corrected_song['youtube_uri'] = ''
-                return corrected_song
+                    stream = resp.content
+                    data = await stream.read()
+                    html = decoder.decode(data)
+                    m = re.search(r'contents":\[{"videoRenderer":{"videoId":"([a-zA-Z0-9_]{11})",', html)
+                    if m is not None:
+                        corrected_song['youtube_uri'] = "https://www.youtube.com/watch?v=" + m.group(1)
+                    else:
+                        corrected_song['youtube_uri'] = ''
+                    return corrected_song
         else:
             return song
 
     async def coro(url):
-        async with ClientSession() as session:
-            resp = await session.get(url=url)
-            if not resp.status == 200:
-                logging.error('bad response, response status code is: , ', resp.status)
-            stream = resp.content
-            data = await stream.read()
-            decoded_data = decoder.decode(data)
-            return decoded_data
+        sem = asyncio.Semaphore(SEMAPHORE)
+        async with sem:
+            async with ClientSession() as session:
+                try:
+                    resp = await session.get(url=url)
+                except ClientConnectorError:
+                    logger.exception('semaphore timeout for request for url: %s , response status is: %s', url, resp.status)
+                if not resp.status == 200:
+                    logger.exception('bad response, response status code is: %s', resp.status)
+                stream = resp.content
+                data = await stream.read()
+                decoded_data = decoder.decode(data)
+                return decoded_data
 
     ops = [coro(url) for url in urls]
     responses = await asyncio.gather(*ops)
@@ -63,15 +76,14 @@ async def main(urls):
                                     (section['type'] == 'VIDEO' and 'actions' in section.keys())]}  # synchronous fetch
         songs.append(new_song)
 
-    ops2 = [resolve_redirect_url(song) for song in songs]
-    songs_with_youtube_links = await asyncio.gather(*ops2)
+    #ops2 = [resolve_redirect_url(song) for song in songs]
+    #songs_with_youtube_links = await asyncio.gather(*ops2)
 
-    with open('songs.json', 'w') as txtfile:
+    with open('./mnt/songs.json', 'w') as txtfile:
         json.dump(songs, txtfile)
-
     print('All finished')
 
 
 if __name__ == '__main__':
-    urls = list(open('urls/urls.txt'))
-    asyncio.run(main(urls), debug=True)
+    urls = list(open('./mnt/urls.txt'))
+    asyncio.run(main(urls), debug=False)

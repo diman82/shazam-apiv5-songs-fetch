@@ -1,7 +1,7 @@
 FROM python
 WORKDIR /app
-ADD main.py requirements.txt logging_config.yaml ./
+ADD requirements.txt ./
 RUN pip install -r requirements.txt
+ADD main.py logging_config.yaml ./
 EXPOSE 80
-ENV NAME world
-CMD [“python”, “main.py”, “urls.txt”]
+CMD ["python", "main.py", "/app/urls/urls.txt"]
