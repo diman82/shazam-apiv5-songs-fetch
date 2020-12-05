@@ -1,4 +1,10 @@
+---
+
 version: 1
+
+filters:
+  infoFilter:
+    (): __main__.infoFilter
 
 formatters:
   simple:
@@ -9,21 +15,25 @@ formatters:
 handlers:
   console:
     class: logging.StreamHandler
-    level: INFO
+    level: DEBUG
     formatter: simple
 
   file_handler:
     class: logging.FileHandler
     level: INFO
-    filename: shazam_fetch_errros.log
+    filename: mnt/shazam_fetch.log
     formatter: extended
 
 loggers:
   dev:
-    handlers: [console, file_handler]
+    level: INFO
+    handlers: [file_handler, console]
   uat:
+    level: WARNING
     handlers: [file_handler]
   prod:
+    level: ERROR
     handlers: [ file_handler ]
+
 root:
-  handlers: [file_handler]
+  handlers: [file_handler, console]

@@ -139,3 +139,6 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+!/mnt/shazam_fetch.log
+/mnt/songs.json
+/mnt/urls.txt

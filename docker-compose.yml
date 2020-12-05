@@ -1,0 +1,11 @@
+version: "3.8"
+services:
+  shazam-apiv5-songs-fetch:
+    build:
+      context: .
+      network: host
+    command: ["python", "main.py", "/app/urls/urls.txt"]
+    volumes:
+      - ./mnt:/app/mnt
+    environment:
+      SEMAPHORE_ENV: 25
